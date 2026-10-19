@@ -97,5 +97,5 @@ const trips = [
 window.AlWafaaData = {
   departments,
   trips,
-  whatsappNumber: "201034196"
+  whatsappNumber: "201140078016"
 };
