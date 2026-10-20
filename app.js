@@ -5,13 +5,7 @@
   const WHATSAPP_NUMBER = "201140078016";
   const app = document.getElementById("app");
   const currentYear = document.getElementById("current-year");
-  const knownHeaders = new Set([
-    "id", "from", "to", "date", "duration", "airline", "ticketclass",
-    "priceeg", "availableseats", "triptype", "weight", "image",
-    "description", "offer", "title", "category", "makkahotel",
-    "makkadist", "madinahotel", "totalseats", "bookedseats"
-  ]);
-
+  let serviceRecords = [];
   currentYear.textContent = new Date().getFullYear();
 
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
@@ -28,12 +22,6 @@
     .replace(/[^a-z0-9]/g, "");
 
   const displayValue = (value) => String(value ?? "").trim() || "غير محدد";
-  const numericValue = (value) => {
-    const numericText = String(value ?? "").trim().replace(/[,\s٬]/g, "");
-    if (!numericText) return undefined;
-    const number = Number(numericText);
-    return Number.isFinite(number) ? number : undefined;
-  };
   const categoryLabel = (value) => {
     const category = String(value ?? "").trim();
     const normalized = category.toLocaleLowerCase("en");
@@ -91,26 +79,49 @@
 
   function readTables(csvText) {
     const rows = parseCsv(csvText);
-    const tables = { flights: [], religious: [] };
-    const headerRows = [];
+    const tables = { departments: [], services: [] };
+    const tableHeaders = [];
+    let serviceTableIndex = 0;
 
     rows.forEach((row, rowIndex) => {
       row.forEach((cell, columnIndex) => {
-        if (normalizeHeader(cell) !== "id") return;
-        const headers = row.slice(columnIndex).map(normalizeHeader);
-        if (headers.some((header) => knownHeaders.has(header))) {
-          headerRows.push({ rowIndex, columnIndex, headers });
+        const firstHeader = normalizeHeader(cell);
+        const nextHeader = normalizeHeader(row[columnIndex + 1]);
+        const thirdHeader = normalizeHeader(row[columnIndex + 2]);
+        const isDepartmentTable = columnIndex === 0 &&
+          firstHeader === "departmentid" &&
+          nextHeader === "title" &&
+          thirdHeader === "image";
+        const isFlightTable = firstHeader === "id" &&
+          nextHeader === "from" &&
+          thirdHeader === "to";
+        const isReligiousTable = firstHeader === "id" &&
+          nextHeader === "title" &&
+          (thirdHeader === "category" ||
+            row.slice(columnIndex + 1).some((value) => normalizeHeader(value) === "makkahotel"));
+        const isDepartmentServiceTable = firstHeader === "id" &&
+          nextHeader === "departmentid" &&
+          thirdHeader === "title";
+        const isServiceTable = isFlightTable || isReligiousTable || isDepartmentServiceTable;
+        if (isDepartmentTable || isServiceTable) {
+          const headers = row.slice(columnIndex).map(normalizeHeader);
+          tableHeaders.push({
+            rowIndex,
+            columnIndex,
+            headers,
+            type: isDepartmentTable ? "departments" : "services",
+            kind: isFlightTable ? "flight" : "religious"
+          });
         }
       });
     });
 
-    if (!headerRows.length) {
-      throw new Error("لم نعثر على صفوف العناوين المتوقعة في ملف CSV.");
+    if (!tableHeaders.some((header) => header.type === "departments")) {
+      throw new Error("لم نعثر على جدول الأقسام الذي يحتوي Department_ID وTitle وImage.");
     }
-
-    headerRows.forEach((tableHeader) => {
+    tableHeaders.forEach((tableHeader) => {
       const { rowIndex, columnIndex, headers } = tableHeader;
-      const nextTable = headerRows.find((header) =>
+      const nextTable = tableHeaders.find((header) =>
         header.rowIndex === rowIndex && header.columnIndex > columnIndex
       );
       const width = nextTable
@@ -127,57 +138,87 @@
         }
         return "";
       };
-      const isFlightTable = headerIndexes.has("from") || headerIndexes.has("ticketclass");
-      const isReligiousTable = headerIndexes.has("title") || headerIndexes.has("makkahotel");
-      if (!isFlightTable && !isReligiousTable) return;
 
       for (let dataIndex = rowIndex + 1; dataIndex < rows.length; dataIndex += 1) {
         const cells = rows[dataIndex];
-        const hasAnotherHeader = headerRows.some((header) => header.rowIndex === dataIndex);
+        const hasAnotherHeader = tableHeaders.some((header) => header.rowIndex === dataIndex);
         if (hasAnotherHeader) break;
         const values = cells.slice(columnIndex, columnIndex + width);
         if (!values.some((value) => value.trim())) continue;
-        const id = get(cells, "id");
-        const record = isFlightTable ? {
-          kind: "flight",
-          id,
+        if (tableHeader.type === "departments") {
+          const department = {
+            id: get(cells, "departmentid"),
+            title: get(cells, "title"),
+            image: get(cells, "image")
+          };
+          if (department.id && department.title) tables.departments.push(department);
+          continue;
+        }
+
+        const isFlight = headerIndexes.has("from") && headerIndexes.has("to");
+        const record = {
+          kind: isFlight ? "flight" : "religious",
+          id: get(cells, "id"),
+          tableIndex: serviceTableIndex,
+          departmentId: get(cells, "departmentid"),
           from: get(cells, "from"),
           to: get(cells, "to"),
+          title: get(cells, "title"),
+          category: get(cells, "category"),
           date: get(cells, "date"),
           duration: get(cells, "duration"),
           airline: get(cells, "airline"),
           ticketClass: get(cells, "ticketclass"),
+          tripType: get(cells, "triptype"),
           price: get(cells, "priceeg"),
           seats: get(cells, "availableseats"),
           weight: get(cells, "weight"),
-          image: get(cells, "image"),
-          description: get(cells, "description"),
-          offer: get(cells, "offer")
-        } : {
-          kind: "religious",
-          id,
-          title: get(cells, "title"),
-          category: get(cells, "category"),
-          date: get(cells, "date"),
-          price: get(cells, "priceeg"),
           makkahHotel: get(cells, "makkahotel"),
           makkahDistance: get(cells, "makkadist"),
           madinahHotel: get(cells, "madinahotel"),
-          totalSeats: get(cells, "totalseats"),
-          bookedSeats: get(cells, "bookedseats"),
-          duration: get(cells, "duration"),
           image: get(cells, "image"),
           description: get(cells, "description"),
-          airline: get(cells, "airline"),
           offer: get(cells, "offer")
         };
-        const hasDetails = Object.entries(record)
-          .some(([key, value]) => key !== "kind" && key !== "id" && String(value).trim());
-        if (!hasDetails || (isFlightTable && (!record.from || !record.to)) ||
-          (isReligiousTable && !record.title)) continue;
-        if (isFlightTable) tables.flights.push(record);
-        else tables.religious.push(record);
+        const hasRequiredDetails = isFlight
+          ? record.from && record.to
+          : record.title || record.makkahHotel || record.madinahHotel;
+        if (hasRequiredDetails) tables.services.push(record);
       }
+      if (tableHeader.type === "services") serviceTableIndex += 1;
+    });
+
+    const normalizedDepartments = tables.departments.map((department) => ({
+      ...department,
+      normalizedId: normalizeHeader(department.id),
+      normalizedTitle: normalizeHeader(department.title)
+    }));
+    tables.services.forEach((service) => {
+      const category = normalizeHeader(service.category);
+      const explicitId = normalizeHeader(service.departmentId);
+      const explicitDepartment = explicitId
+        ? normalizedDepartments.find((department) => explicitId === department.normalizedId)
+        : undefined;
+      const matchedDepartment = normalizedDepartments.find((department) =>
+        category && (
+          category === department.normalizedId ||
+          category === department.normalizedTitle ||
+          category.includes(department.normalizedId) ||
+          department.normalizedId.includes(category)
+        )
+      );
+      const flightDepartment = service.kind === "flight"
+        ? normalizedDepartments.find((department) =>
+            department.normalizedId.includes("flight") ||
+            department.normalizedTitle.includes("flight") ||
+            department.normalizedTitle.includes("طيران")
+          )
+        : undefined;
+      const orderedDepartment = normalizedDepartments[service.tableIndex];
+      const department = explicitDepartment || flightDepartment || matchedDepartment || orderedDepartment;
+      service.departmentId = department?.id || service.departmentId;
+      service.departmentTitle = department?.title || "";
+      delete service.tableIndex;
     });
     return tables;
   }
@@ -185,7 +226,7 @@
   function whatsappUrl(record) {
     const serviceName = record.kind === "flight"
       ? `تذكرة طيران: ${displayValue(record.from)} إلى ${displayValue(record.to)}`
-      : `برنامج ${categoryLabel(record.category)}: ${displayValue(record.title)}`;
+      : `برنامج ${categoryLabel(record.category || record.departmentTitle)}: ${displayValue(record.title)}`;
     const message = [
       "السلام عليكم، أرغب في الاستفسار والحجز:",
       serviceName,
@@ -212,23 +253,24 @@
   }
 
   function detailItem(label, value) {
+    if (value === undefined || value === null || !String(value).trim()) return "";
     return `<div class="service-detail"><span>${escapeHtml(label)}</span><strong>${escapeHtml(displayValue(value))}</strong></div>`;
   }
 
-  function serviceCard(record) {
-    const isFlight = record.kind === "flight";
-    const isOffer = String(record.offer).trim().toLocaleLowerCase("en") === "yes";
-    const title = isFlight
+  function serviceTitle(record) {
+    return record.kind === "flight"
       ? `${displayValue(record.from)} إلى ${displayValue(record.to)}`
       : displayValue(record.title);
-    const category = isFlight ? "تذاكر الطيران" : categoryLabel(record.category);
-    const totalSeats = numericValue(record.totalSeats);
-    const bookedSeats = numericValue(record.bookedSeats);
+  }
+
+  function serviceDetails(record) {
+    const isFlight = record.kind === "flight";
     const details = isFlight
       ? [
           ["شركة الطيران", record.airline],
           ["التاريخ", record.date],
           ["درجة التذكرة", record.ticketClass],
+          ["نوع الرحلة", record.tripType],
           ["المقاعد المتاحة", record.seats],
           ["الوزن", record.weight],
           ["مدة الرحلة", record.duration]
@@ -239,11 +281,22 @@
           ["المسافة إلى الحرم", record.makkahDistance],
           ["فندق المدينة", record.madinahHotel],
           ["مدة البرنامج", record.duration],
-          ["المقاعد المتاحة", totalSeats !== undefined && bookedSeats !== undefined
-            ? Math.max(0, totalSeats - bookedSeats)
-            : record.totalSeats]
+          ["شركة الطيران", record.airline],
+          ["المقاعد المتاحة", record.seats]
         ];
-    const description = String(record.description ?? "").trim();
+    return details;
+  }
+
+  function serviceCard(record, index) {
+    const isFlight = record.kind === "flight";
+    const isOffer = String(record.offer).trim().toLocaleLowerCase("en") === "yes";
+    const title = serviceTitle(record);
+    const category = isFlight
+      ? "تذاكر الطيران"
+      : categoryLabel(record.category || record.departmentTitle);
+    const summaryDetails = isFlight
+      ? [["التاريخ", record.date], ["درجة التذكرة", record.ticketClass]]
+      : [["التاريخ", record.date], ["مدة البرنامج", record.duration]];
     return `
       <article class="service-card">
         ${imageMarkup(record, title)}
@@ -257,22 +310,43 @@
           </div>
           <h3>${escapeHtml(title)}</h3>
           ${isFlight ? `<p class="service-route">${escapeHtml(displayValue(record.airline))}</p>` : ""}
-          <div class="service-details">${details.map(([label, value]) => detailItem(label, value)).join("")}</div>
-          ${description ? `<p class="service-description">${escapeHtml(description)}</p>` : ""}
+          <div class="service-details service-summary">${summaryDetails.map(([label, value]) => detailItem(label, value)).join("")}</div>
           <div class="service-card-footer">
             <span class="service-price">${escapeHtml(formatPrice(record.price))}</span>
-            <a class="button button-whatsapp" href="${escapeHtml(whatsappUrl(record))}" target="_blank" rel="noopener noreferrer">احجز الآن <span aria-hidden="true">↗</span></a>
+            <div class="service-card-actions">
+              <button class="button button-details" type="button" data-show-details="${index}">عرض التفاصيل</button>
+              <a class="button button-whatsapp" href="${escapeHtml(whatsappUrl(record))}" target="_blank" rel="noopener noreferrer">احجز الآن <span aria-hidden="true">↗</span></a>
+            </div>
           </div>
         </div>
       </article>`;
   }
 
-  function sectionMarkup(id, eyebrow, title, description, records) {
+  function serviceDetailsMarkup(record) {
+    const title = serviceTitle(record);
+    const description = String(record.description ?? "").trim();
+    const category = record.kind === "flight"
+      ? "تذاكر الطيران"
+      : categoryLabel(record.category || record.departmentTitle);
+    return `
+      <div class="service-modal-heading">
+        ${imageMarkup(record, title)}
+        <div class="service-modal-title">
+          <span class="service-category">${escapeHtml(category)}</span>
+          <h2 id="service-modal-title">${escapeHtml(title)}</h2>
+          <span class="service-price">${escapeHtml(formatPrice(record.price))}</span>
+        </div>
+      </div>
+      <div class="service-details service-modal-details">${serviceDetails(record).map(([label, value]) => detailItem(label, value)).join("")}</div>
+      ${description ? `<section class="service-modal-description"><h3>تفاصيل الخدمة</h3><p>${escapeHtml(description)}</p></section>` : ""}`;
+  }
+
+  function sectionMarkup(id, eyebrow, title, description, records, allServices) {
     const content = records.length
-      ? `<div class="service-grid">${records.map(serviceCard).join("")}</div>`
+      ? `<div class="service-grid">${records.map((record) => serviceCard(record, allServices.indexOf(record))).join("")}</div>`
       : `<p class="section-empty">لا توجد عروض متاحة حالياً. تواصل معنا لمعرفة أحدث الخيارات.</p>`;
     return `
-      <section class="content-section dynamic-section" id="${id}">
+      <section class="content-section dynamic-section page-panel" data-page="${escapeHtml(id)}">
         <div class="section-heading">
           <div>
             <span class="section-kicker">${escapeHtml(eyebrow)}</span>
@@ -284,39 +358,130 @@
       </section>`;
   }
 
+  function departmentCard(department) {
+    let image = '<span class="department-card-placeholder" aria-hidden="true">✧</span>';
+    if (department.image) {
+      try {
+        const imageUrl = new URL(department.image, window.location.href);
+        if (["http:", "https:"].includes(imageUrl.protocol)) {
+          image = `<img class="department-card-image" src="${escapeHtml(imageUrl.href)}" alt="${escapeHtml(department.title)}" loading="lazy">`;
+        }
+      } catch {
+        image = '<span class="department-card-placeholder" aria-hidden="true">✧</span>';
+      }
+    }
+    return `
+      <a class="department-card" href="#department/${encodeURIComponent(department.id)}">
+        ${image}
+        <span class="department-card-overlay"></span>
+        <span class="department-info"><h3>${escapeHtml(department.title)}</h3></span>
+        <span class="department-arrow" aria-hidden="true">←</span>
+      </a>`;
+  }
+
   function renderHome(tables) {
-    const offers = [...tables.flights, ...tables.religious]
+    serviceRecords = tables.services;
+    const offers = tables.services
       .filter((record) => String(record.offer).trim().toLocaleLowerCase("en") === "yes");
+    const departments = tables.departments;
+    const departmentCards = departments.length
+      ? `<div class="department-grid">${departments.map(departmentCard).join("")}</div>`
+      : '<p class="section-empty">لا توجد أقسام متاحة حالياً.</p>';
+    const departmentSections = departments.map((department) => {
+      const services = tables.services.filter((service) => service.departmentId === department.id);
+      return sectionMarkup(
+        `department:${department.id}`,
+        "القسم",
+        department.title,
+        `استكشف خدمات ${department.title} وتفاصيل الرحلات المتاحة.`,
+        services,
+        tables.services
+      );
+    }).join("");
+    const firstDepartmentAction = departments[0]
+      ? `<a class="button button-ghost" href="#department/${encodeURIComponent(departments[0].id)}">تعرّف على ${escapeHtml(departments[0].title)}</a>`
+      : "";
+
+    document.querySelector(".main-nav").innerHTML = `
+      <a href="#home">الرئيسية</a>
+      <a href="#offers">العروض الخاصة</a>
+      ${departments.map((department) =>
+        `<a href="#department/${encodeURIComponent(department.id)}">${escapeHtml(department.title)}</a>`
+      ).join("")}`;
+
     app.innerHTML = `
-      <section class="hero" id="home">
-        <div class="hero-inner">
-          <div class="hero-copy">
-            <span class="eyebrow">الوفاء ترافل · رحلتك تبدأ من هنا</span>
-            <h1>رحلتك القادمة<br><em>بكل عناية ووفاء</em></h1>
-            <p>اكتشف عروض الطيران وبرامج الحج والعمرة، وتواصل مباشرة مع فريقنا لحجز رحلتك بكل سهولة.</p>
-            <div class="hero-actions">
-              <a class="button button-primary" href="#offers">اكتشف العروض المميزة <span aria-hidden="true">←</span></a>
-              <a class="button button-ghost" href="#flights">تصفح الرحلات الجوية</a>
+      <div class="page-panel home-panel" data-page="home" id="home">
+        <section class="hero">
+          <div class="hero-inner">
+            <div class="hero-copy">
+              <span class="eyebrow">الوفاء ترافل · رحلتك تبدأ من هنا</span>
+              <h1>رحلتك القادمة<br><em>بكل عناية ووفاء</em></h1>
+              <p>اكتشف خدماتنا، وتواصل مباشرة مع فريقنا لحجز رحلتك بكل سهولة.</p>
+              <div class="hero-actions">
+                <a class="button button-primary" href="#offers">اكتشف العروض المميزة <span aria-hidden="true">←</span></a>
+                ${firstDepartmentAction}
+              </div>
+            </div>
+            <div class="hero-art" aria-hidden="true">
+              <span class="hero-orbit"></span>
+              <img class="hero-logo-img" src="kabaa-logo-1.png" alt="" width="220" height="220">
+              <span class="floating-note">الوفاء ترافل<span>نرافقك في كل خطوة</span></span>
             </div>
           </div>
-          <div class="hero-art" aria-hidden="true">
-            <span class="hero-orbit"></span>
-            <img class="hero-logo-img" src="kabaa-logo-1.png" alt="" width="220" height="220">
-            <span class="floating-note">الوفاء ترافل<span>نرافقك في كل خطوة</span></span>
-          </div>
-        </div>
-      </section>
-      <section class="trust-strip" aria-label="مميزات الوفاء ترافل">
-        <div class="trust-inner">
-          <div class="trust-item"><span class="trust-icon" aria-hidden="true">✧</span><span><strong>عروض محدثة</strong><small>من جدولنا مباشرة</small></span></div>
-          <div class="trust-item"><span class="trust-icon" aria-hidden="true">✈</span><span><strong>خيارات سفر متنوعة</strong><small>طيران وبرامج دينية</small></span></div>
-          <div class="trust-item"><span class="trust-icon" aria-hidden="true">☏</span><span><strong>حجز مباشر</strong><small>تواصل معنا عبر واتساب</small></span></div>
-        </div>
-      </section>
-      ${sectionMarkup("offers", "عروض مميزة", "عروض خاصة 🔥", "أفضل الفرص المختارة من برامجنا وتذاكر الطيران.", offers)}
-      ${sectionMarkup("flights", "رحلاتك الجوية", "حجز تذاكر الطيران", "تفاصيل الرحلات والأسعار والمقاعد المتاحة.", tables.flights)}
-      ${sectionMarkup("religious", "رحلات إيمانية", "برامج الحج والعمرة", "إقامة مريحة وتفاصيل واضحة لتخطط لرحلتك المباركة.", tables.religious)}
+        </section>
+        <section class="content-section home-departments" aria-labelledby="departments-heading">
+          <div class="section-heading"><div><span class="section-kicker">خدماتنا</span><h2 id="departments-heading">اختر القسم المناسب لرحلتك</h2><p>استعرض الخدمات المتاحة في كل قسم.</p></div></div>
+          ${departmentCards}
+        </section>
+      </div>
+      ${sectionMarkup("offers", "عروض مميزة", "عروض خاصة 🔥", "أفضل الفرص المختارة من جميع الأقسام.", offers, tables.services)}
+      ${departmentSections}
+      <dialog class="service-modal" id="service-details-modal" aria-labelledby="service-modal-title">
+        <button class="service-modal-close" type="button" data-close-details aria-label="إغلاق التفاصيل">×</button>
+        <div class="service-modal-content" data-modal-content></div>
+      </dialog>
     `;
+    updateActivePage();
+  }
+
+  function updateActivePage() {
+    let requestedPage = window.location.hash.slice(1);
+    let page = "home";
+
+    if (requestedPage === "offers") {
+      page = "offers";
+    } else if (requestedPage.startsWith("department/")) {
+      try {
+        const departmentId = decodeURIComponent(requestedPage.slice("department/".length));
+        if ([...app.querySelectorAll(".page-panel")]
+          .some((panel) => panel.dataset.page === `department:${departmentId}`)) {
+          page = `department:${departmentId}`;
+        }
+      } catch {
+        page = "home";
+      }
+    } else if (requestedPage && requestedPage !== "home") {
+      const department = [...app.querySelectorAll(".department-card")]
+        .find((card) => {
+          try {
+            return decodeURIComponent(card.getAttribute("href").split("/").pop()) === requestedPage;
+          } catch {
+            return false;
+          }
+        });
+      if (department) page = `department:${requestedPage}`;
+    }
+
+    app.querySelectorAll(".page-panel").forEach((panel) => {
+      panel.hidden = panel.dataset.page !== page;
+    });
+    document.querySelectorAll(".main-nav a").forEach((link) => {
+      const isActive = page.startsWith("department:")
+        ? link.hash === `#department/${encodeURIComponent(page.slice("department:".length))}`
+        : link.hash === `#${page}`;
+      if (isActive) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
   }
 
   function renderState(title, message, isError = false) {
@@ -358,13 +523,40 @@
   }
 
   app.addEventListener("click", (event) => {
-    if (event.target instanceof Element && event.target.closest("[data-retry]")) {
+    if (!(event.target instanceof Element)) return;
+    if (event.target.closest("[data-retry]")) {
       loadOffers();
+      return;
     }
+    const detailsButton = event.target.closest("[data-show-details]");
+    if (detailsButton) {
+      const record = serviceRecords[Number(detailsButton.dataset.showDetails)];
+      const modal = app.querySelector("#service-details-modal");
+      if (!record || !(modal instanceof HTMLDialogElement)) return;
+      modal.querySelector("[data-modal-content]").innerHTML = serviceDetailsMarkup(record);
+      modal.showModal();
+      return;
+    }
+    const closeButton = event.target.closest("[data-close-details]");
+    if (closeButton) {
+      app.querySelector("#service-details-modal")?.close();
+    }
+  });
+  app.addEventListener("click", (event) => {
+    const modal = app.querySelector("#service-details-modal");
+    if (event.target === modal && modal instanceof HTMLDialogElement) modal.close();
+  });
+
+  window.addEventListener("hashchange", () => {
+    updateActivePage();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
   document.querySelectorAll("[data-business-contact]").forEach((link) => {
     link.href = `https://wa.me/${WHATSAPP_NUMBER}`;
   });
+  if (!window.location.hash) {
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#home`);
+  }
   loadOffers();
 })();
