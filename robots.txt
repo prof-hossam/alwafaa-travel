@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://prof-hossam.github.io/alwafaa-travel/sitemap.xml

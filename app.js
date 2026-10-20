@@ -3,6 +3,7 @@
 
   const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTFXnAKYvMReHVAPotobX9eM_V-iNiSoUIrpebrOe4bjJGwR-DvOMRe1qwg5uA5Wrca2_R7LiFAAsS6/pub?output=csv";
   const WHATSAPP_NUMBER = "201140078016";
+  const OFFERS_CACHE_KEY = "alwafaa-travel-offers-v1";
   const app = document.getElementById("app");
   const currentYear = document.getElementById("current-year");
   let serviceRecords = [];
@@ -22,6 +23,11 @@
     .replace(/[^a-z0-9]/g, "");
 
   const displayValue = (value) => String(value ?? "").trim() || "غير محدد";
+  const normalizeSearch = (value) => String(value ?? "")
+    .toLocaleLowerCase("ar")
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .trim();
   const categoryLabel = (value) => {
     const category = String(value ?? "").trim();
     const normalized = category.toLocaleLowerCase("en");
@@ -297,8 +303,25 @@
     const summaryDetails = isFlight
       ? [["التاريخ", record.date], ["درجة التذكرة", record.ticketClass]]
       : [["التاريخ", record.date], ["مدة البرنامج", record.duration]];
+    const searchText = [
+      serviceTitle(record),
+      category,
+      record.departmentTitle,
+      record.id,
+      record.from,
+      record.to,
+      record.airline,
+      record.date,
+      record.duration,
+      record.ticketClass,
+      record.tripType,
+      record.price,
+      record.description,
+      record.makkahHotel,
+      record.madinahHotel
+    ].filter(Boolean).join(" ");
     return `
-      <article class="service-card">
+      <article class="service-card" data-search="${escapeHtml(searchText)}" data-department="${escapeHtml(record.departmentId)}">
         ${imageMarkup(record, title)}
         <div class="service-card-content">
           <div class="service-card-heading">
@@ -344,7 +367,24 @@
       </div>`;
   }
 
-  function sectionMarkup(id, eyebrow, title, description, records, allServices) {
+  function sectionMarkup(id, eyebrow, title, description, records, allServices, departments = []) {
+    const filterMarkup = records.length
+      ? `<div class="listing-toolbar" data-service-filters>
+          <label class="search-wrap">
+            <span aria-hidden="true">⌕</span>
+            <input class="search-field" type="search" data-service-search placeholder="ابحث في العروض..." aria-label="ابحث في العروض">
+          </label>
+          ${id === "offers" ? `<label class="filter-select-wrap">
+            <span class="sr-only">تصفية حسب القسم</span>
+            <select class="form-control" data-department-filter aria-label="تصفية حسب القسم">
+              <option value="">جميع الأقسام</option>
+              ${departments.map((department) => `<option value="${escapeHtml(department.id)}">${escapeHtml(department.title)}</option>`).join("")}
+            </select>
+          </label>` : ""}
+          <span class="listing-count" data-results-count aria-live="polite">عرض ${records.length} من ${records.length} عروض</span>
+        </div>
+        <p class="section-empty search-empty" data-search-empty hidden>لا توجد عروض تطابق خيارات البحث.</p>`
+      : "";
     const content = records.length
       ? `<div class="service-grid">${records.map((record) => serviceCard(record, allServices.indexOf(record))).join("")}</div>`
       : `<p class="section-empty">لا توجد عروض متاحة حالياً. تواصل معنا لمعرفة أحدث الخيارات.</p>`;
@@ -357,6 +397,7 @@
             <p>${escapeHtml(description)}</p>
           </div>
         </div>
+        ${filterMarkup}
         ${content}
       </section>`;
   }
@@ -437,7 +478,7 @@
           ${departmentCards}
         </section>
       </div>
-      ${sectionMarkup("offers", "عروض مميزة", "عروض خاصة 🔥", "أفضل الفرص المختارة من جميع الأقسام.", offers, tables.services)}
+      ${sectionMarkup("offers", "عروض مميزة", "عروض خاصة 🔥", "أفضل الفرص المختارة من جميع الأقسام.", offers, tables.services, departments)}
       ${departmentSections}
       <dialog class="service-modal" id="service-details-modal" aria-labelledby="service-modal-title">
         <button class="service-modal-close" type="button" data-close-details aria-label="إغلاق التفاصيل">×</button>
@@ -487,6 +528,27 @@
     });
   }
 
+  function applyServiceFilters(toolbar) {
+    const section = toolbar.closest(".dynamic-section");
+    if (!section) return;
+    const query = normalizeSearch(toolbar.querySelector("[data-service-search]")?.value);
+    const departmentId = toolbar.querySelector("[data-department-filter]")?.value || "";
+    const cards = [...section.querySelectorAll(".service-card")];
+    let visibleCount = 0;
+
+    cards.forEach((card) => {
+      const matchesQuery = !query || normalizeSearch(card.dataset.search).includes(query);
+      const matchesDepartment = !departmentId || card.dataset.department === departmentId;
+      card.hidden = !matchesQuery || !matchesDepartment;
+      if (!card.hidden) visibleCount += 1;
+    });
+
+    const count = toolbar.querySelector("[data-results-count]");
+    if (count) count.textContent = `عرض ${visibleCount} من ${cards.length} عروض`;
+    const emptyMessage = section.querySelector("[data-search-empty]");
+    if (emptyMessage) emptyMessage.hidden = visibleCount > 0;
+  }
+
   function renderState(title, message, isError = false) {
     app.innerHTML = `
       <section class="content-section data-state${isError ? " data-state-error" : ""}" role="${isError ? "alert" : "status"}">
@@ -497,8 +559,72 @@
       </section>`;
   }
 
+  function readCachedOffers() {
+    let cachedValue;
+    try {
+      cachedValue = window.localStorage.getItem(OFFERS_CACHE_KEY);
+    } catch (error) {
+      console.warn("تعذر قراءة نسخة العروض المحفوظة في المتصفح.", error);
+      return null;
+    }
+    if (!cachedValue) return null;
+
+    try {
+      const cached = JSON.parse(cachedValue);
+      if (typeof cached.csvText !== "string" || !cached.csvText.trim()) {
+        throw new Error("صيغة نسخة العروض المحفوظة غير صالحة.");
+      }
+      return {
+        tables: readTables(cached.csvText),
+        savedAt: Number.isFinite(cached.savedAt) ? cached.savedAt : 0
+      };
+    } catch (error) {
+      console.warn("تعذر استخدام نسخة العروض المحفوظة في المتصفح.", error);
+      return null;
+    }
+  }
+
+  function saveCachedOffers(csvText) {
+    try {
+      window.localStorage.setItem(OFFERS_CACHE_KEY, JSON.stringify({
+        csvText,
+        savedAt: Date.now()
+      }));
+    } catch (error) {
+      console.warn("تعذر حفظ نسخة العروض في المتصفح.", error);
+    }
+  }
+
+  function setDataStatus(message, isError = false) {
+    let status = app.querySelector("[data-data-status]");
+    if (!status) {
+      status = document.createElement("div");
+      status.className = "data-status";
+      status.dataset.dataStatus = "";
+      app.prepend(status);
+    }
+    status.classList.toggle("data-status-error", isError);
+    status.setAttribute("role", isError ? "alert" : "status");
+    status.innerHTML = `${escapeHtml(message)}${isError ? ' <button class="data-status-retry" type="button" data-retry>إعادة المحاولة</button>' : ""}`;
+    status.hidden = !message;
+  }
+
+  function cachedDateLabel(savedAt) {
+    if (!savedAt) return "وقت غير معروف";
+    return new Intl.DateTimeFormat("ar-EG", {
+      dateStyle: "short",
+      timeStyle: "short"
+    }).format(savedAt);
+  }
+
   async function loadOffers() {
-    renderState("نجهّز رحلتك", "جارٍ تحميل أحدث عروض الطيران وبرامج الحج والعمرة...");
+    const cached = readCachedOffers();
+    if (cached) {
+      renderHome(cached.tables);
+      setDataStatus(`نعرض نسخة محفوظة من ${cachedDateLabel(cached.savedAt)} أثناء تحديث العروض...`);
+    } else {
+      renderState("نجهّز رحلتك", "جارٍ تحميل أحدث عروض الطيران وبرامج الحج والعمرة...");
+    }
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 20000);
     try {
@@ -510,6 +636,8 @@
       const csvText = await response.text();
       const tables = readTables(csvText);
       renderHome(tables);
+      saveCachedOffers(csvText);
+      setDataStatus("");
       document.querySelectorAll("[data-business-contact]").forEach((link) => {
         link.href = `https://wa.me/${WHATSAPP_NUMBER}`;
       });
@@ -519,7 +647,11 @@
         : error instanceof TypeError
           ? "تعذر الاتصال بجدول البيانات. تحقق من اتصال الإنترنت وإعدادات مشاركة CSV."
           : error.message || "حدث خطأ أثناء تحميل بيانات الرحلات.";
-      renderState("تعذر تحميل العروض", message, true);
+      if (cached) {
+        setDataStatus(`تعذر تحديث العروض (${message}) نعرض النسخة المحفوظة من ${cachedDateLabel(cached.savedAt)}.`, true);
+      } else {
+        renderState("تعذر تحميل العروض", message, true);
+      }
     } finally {
       window.clearTimeout(timeout);
     }
@@ -544,6 +676,16 @@
     if (closeButton) {
       app.querySelector("#service-details-modal")?.close();
     }
+  });
+  app.addEventListener("input", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const toolbar = event.target.closest("[data-service-filters]");
+    if (toolbar) applyServiceFilters(toolbar);
+  });
+  app.addEventListener("change", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const toolbar = event.target.closest("[data-service-filters]");
+    if (toolbar) applyServiceFilters(toolbar);
   });
   app.addEventListener("click", (event) => {
     const modal = app.querySelector("#service-details-modal");
