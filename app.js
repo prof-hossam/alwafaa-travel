@@ -338,7 +338,10 @@
         </div>
       </div>
       <div class="service-details service-modal-details">${serviceDetails(record).map(([label, value]) => detailItem(label, value)).join("")}</div>
-      ${description ? `<section class="service-modal-description"><h3>تفاصيل الخدمة</h3><p>${escapeHtml(description)}</p></section>` : ""}`;
+      ${description ? `<section class="service-modal-description"><h3>تفاصيل الخدمة</h3><p>${escapeHtml(description)}</p></section>` : ""}
+      <div class="service-modal-actions">
+        <a class="button button-whatsapp" href="${escapeHtml(whatsappUrl(record))}" target="_blank" rel="noopener noreferrer">احجز الآن <span aria-hidden="true">↗</span></a>
+      </div>`;
   }
 
   function sectionMarkup(id, eyebrow, title, description, records, allServices) {
