@@ -388,37 +388,68 @@ button { cursor: pointer; }
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
 
-/* تعديل أحجام وتوزيع أزرار التواصل والهيدر على الهواتف والشاشات الصغيرة */
-@media (max-width: 680px) {
-  .main-header {
-    flex-wrap: nowrap; /* منع نزول الأزرار سطر جديد وتفريغ المساحة بشكل ذكي */
-    justify-content: space-between;
-    padding: 8px 12px;
-  }
-  
-  .header-actions {
-    gap: 4px;
-    flex-shrink: 0;
-  }
-
-  .header-action {
-    min-height: 32px;
-    padding: 4px 8px;
-    font-size: 9px; /* تصغير حجم الخط ليتناسب مع الموبايل */
-    border-radius: 6px;
-  }
-
-  .header-action svg, .header-action i {
-    width: 12px;
-    height: 12px;
-    font-size: 12px;
-  }
+@media (max-width: 900px) {
+  .department-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .trip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero-inner { gap: 25px; }
+  .detail-layout { grid-template-columns: minmax(265px, .85fr) minmax(0, 1.15fr); gap: 16px; }
+  .booking-card { padding: 18px; }
+  .service-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-
-/* شاشات الموبايل الأصغر ضيق المساحة */
+@media (max-width: 680px) {
+  .header-inner, .footer-inner, .hero-inner, .trust-inner, .content-section, .page-banner-inner { width: min(100% - 32px, 560px); }
+  .header-inner { min-height: 68px; gap: 12px; }
+  .main-nav { display: none; }
+  .brand-copy small { font-size: 9px; }
+  .header-actions { gap: 6px; }
+  .header-action { min-height: 36px; gap: 5px; padding: 6px 8px; font-size: 10px; }
+  .header-action svg { width: 14px; height: 14px; }
+  .brand { gap: 8px; }
+  .brand-logo-img { flex-basis: 40px; width: 40px; height: 40px; }
+  .brand-copy strong { font-size: 14px; }
+  .hero-inner { min-height: auto; grid-template-columns: 1fr; padding: 52px 0 43px; }
+  .hero-copy { max-width: 100%; }
+  .hero-copy > p { font-size: 13px; }
+  .hero-art { display: none; }
+  .trust-inner { min-height: auto; padding: 16px 0; grid-template-columns: 1fr; gap: 13px; }
+  .trust-item { justify-content: flex-start; }
+  .content-section { padding: 46px 0 52px; }
+  .department-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+  .department-card { min-height: 166px; padding: 17px 14px; }
+  .department-info h3 { font-size: 14px; }
+  .department-info p { max-width: 135px; line-height: 1.7; }
+  .trip-grid { grid-template-columns: 1fr; }
+  .service-grid { grid-template-columns: 1fr; }
+  .dynamic-section:nth-of-type(even) { padding-right: 16px; padding-left: 16px; }
+  .featured-section .content-section { padding-top: 44px; }
+  .section-heading { align-items: start; }
+  .section-heading > .text-link { margin-top: 10px; white-space: nowrap; }
+  .listing-toolbar { align-items: stretch; flex-direction: column; }
+  .search-field { width: 100%; }
+  .page-banner { padding: 34px 0; }
+  .page-banner-inner { width: min(100% - 32px, 560px); }
+  .detail-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .detail-main { grid-column: 1; grid-row: 1; }
+  .booking-card { position: static; grid-column: 1; grid-row: 2; padding: 19px; }
+  .detail-content { padding: 19px; }
+  .search-wrap { width: 100%; }
+  .spec-grid { gap: 8px; }
+  .spec-item { min-height: 72px; padding: 10px; }
+  .footer-inner { justify-content: center; padding: 20px 0; gap: 12px; text-align: center; }
+  .footer-inner > * { width: 100%; }
+  .footer-inner .brand { justify-content: center; }
+}
 @media (max-width: 374px) {
-  .header-action {
-    padding: 4px 6px;
-    font-size: 8px;
-  }
+  .header-inner { gap: 6px; }
+  .header-actions { gap: 4px; }
+  .header-action { min-height: 34px; gap: 4px; padding: 5px 4px; font-size: 8px; }
+  .header-action svg { width: 12px; height: 12px; }
+  .brand { gap: 6px; }
+  .brand-logo-img { flex-basis: 36px; width: 36px; height: 36px; }
+  .brand-copy strong { font-size: 12px; }
+  .brand-copy small { font-size: 8px; }
+  .department-grid { grid-template-columns: 1fr; }
+  .department-card { min-height: 145px; }
+  .occupancy-options { grid-template-columns: 1fr; }
+  .occupancy-option span { min-height: 51px; }
 }
