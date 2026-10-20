@@ -1,6 +1,7 @@
 import csv
 import io
 import re
+import unicodedata
 import urllib.request
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
@@ -9,6 +10,27 @@ from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
+HEADER_ALIAS_GROUPS = {
+    "id": ("id", "معرف", "المعرف", "رقم المعرف", "رقم العرض"),
+    "departmentid": ("departmentid", "معرف القسم", "معرّف القسم", "رقم القسم", "كود القسم"),
+    "title": ("title", "العنوان", "عنوان", "الاسم", "اسم القسم", "اسم البرنامج", "اسم العرض", "اسم الخدمة"),
+    "image": ("image", "الصورة", "صورة", "رابط الصورة"),
+    "from": ("from", "من", "مدينة المغادرة", "جهة المغادرة"),
+    "to": ("to", "الى", "إلى", "الوجهة", "مدينة الوصول"),
+    "category": ("category", "الفئة", "التصنيف", "نوع الخدمة", "القسم"),
+    "makkahotel": ("makkahotel", "فندق مكة", "فندق مكه", "فندق مكة المكرمة"),
+}
+HEADER_ALIASES = {
+    "".join(
+        character
+        for character in unicodedata.normalize("NFKC", alias).casefold()
+        if not unicodedata.category(character).startswith("M")
+        and character != "\u0640"
+        and character.isalnum()
+    ): canonical
+    for canonical, aliases in HEADER_ALIAS_GROUPS.items()
+    for alias in aliases
+}
 
 
 class SiteMetadataParser(HTMLParser):
@@ -28,7 +50,14 @@ class SiteMetadataParser(HTMLParser):
 
 
 def normalize_header(value):
-    return re.sub(r"[^a-z0-9]", "", value.lstrip("\ufeff").lower())
+    normalized = "".join(
+        character
+        for character in unicodedata.normalize("NFKC", value.lstrip("\ufeff")).casefold()
+        if not unicodedata.category(character).startswith("M")
+        and character != "\u0640"
+        and character.isalnum()
+    )
+    return HEADER_ALIASES.get(normalized, normalized)
 
 
 def contains_sequence(row, sequence):

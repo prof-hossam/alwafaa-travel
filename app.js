@@ -19,8 +19,42 @@
 
   const normalizeHeader = (value) => String(value ?? "")
     .replace(/^\uFEFF/, "")
-    .toLocaleLowerCase("en")
-    .replace(/[^a-z0-9]/g, "");
+    .normalize("NFKC")
+    .toLocaleLowerCase("ar")
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/[^\p{L}\p{N}]/gu, "");
+  const HEADER_ALIASES = new Map();
+  const HEADER_ALIAS_GROUPS = {
+    id: ["id", "معرف", "المعرف", "رقم المعرف", "رقم العرض"],
+    departmentid: ["departmentid", "معرف القسم", "معرّف القسم", "رقم القسم", "كود القسم"],
+    title: ["title", "العنوان", "عنوان", "الاسم", "اسم القسم", "اسم البرنامج", "اسم العرض", "اسم الخدمة"],
+    image: ["image", "الصورة", "صورة", "رابط الصورة"],
+    from: ["from", "من", "مدينة المغادرة", "جهة المغادرة"],
+    to: ["to", "الى", "إلى", "الوجهة", "مدينة الوصول"],
+    category: ["category", "الفئة", "التصنيف", "نوع الخدمة", "القسم"],
+    date: ["date", "التاريخ", "موعد الرحلة", "تاريخ السفر"],
+    duration: ["duration", "المدة", "مدة البرنامج", "مدة الرحلة"],
+    airline: ["airline", "شركة الطيران", "الناقل الجوي"],
+    ticketclass: ["ticketclass", "درجة التذكرة", "درجة السفر"],
+    triptype: ["triptype", "نوع الرحلة"],
+    priceeg: ["priceeg", "price", "السعر", "السعر بالجنيه", "السعر بالجنيه المصري", "السعر المصري"],
+    availableseats: ["availableseats", "المقاعد المتاحة", "المقاعد"],
+    weight: ["weight", "الوزن", "الأمتعة", "الوزن المسموح"],
+    makkahotel: ["makkahotel", "فندق مكة", "فندق مكه", "فندق مكة المكرمة"],
+    makkadist: ["makkadist", "المسافة إلى الحرم", "المسافة للحرم", "بعد الفندق عن الحرم"],
+    madinahotel: ["madinahotel", "فندق المدينة", "فندق المدينة المنورة"],
+    description: ["description", "الوصف", "التفاصيل", "تفاصيل الخدمة", "تفاصيل العرض"],
+    offer: ["offer", "عرض خاص", "عرض", "هل يوجد عرض"]
+  };
+  Object.entries(HEADER_ALIAS_GROUPS).forEach(([key, aliases]) => {
+    aliases.forEach((alias) => HEADER_ALIASES.set(normalizeHeader(alias), key));
+  });
+  const canonicalHeader = (value) => {
+    const normalized = normalizeHeader(value);
+    return HEADER_ALIASES.get(normalized) || normalized;
+  };
+  const STANDARD_SERVICE_HEADERS = new Set(Object.keys(HEADER_ALIAS_GROUPS));
 
   const displayValue = (value) => String(value ?? "").trim() || "غير محدد";
   const normalizeSearch = (value) => String(value ?? "")
@@ -91,9 +125,9 @@
 
     rows.forEach((row, rowIndex) => {
       row.forEach((cell, columnIndex) => {
-        const firstHeader = normalizeHeader(cell);
-        const nextHeader = normalizeHeader(row[columnIndex + 1]);
-        const thirdHeader = normalizeHeader(row[columnIndex + 2]);
+        const firstHeader = canonicalHeader(cell);
+        const nextHeader = canonicalHeader(row[columnIndex + 1]);
+        const thirdHeader = canonicalHeader(row[columnIndex + 2]);
         const isDepartmentTable = columnIndex === 0 &&
           firstHeader === "departmentid" &&
           nextHeader === "title" &&
@@ -104,17 +138,19 @@
         const isReligiousTable = firstHeader === "id" &&
           nextHeader === "title" &&
           (thirdHeader === "category" ||
-            row.slice(columnIndex + 1).some((value) => normalizeHeader(value) === "makkahotel"));
+            row.slice(columnIndex + 1).some((value) => canonicalHeader(value) === "makkahotel"));
         const isDepartmentServiceTable = firstHeader === "id" &&
           nextHeader === "departmentid" &&
           thirdHeader === "title";
         const isServiceTable = isFlightTable || isReligiousTable || isDepartmentServiceTable;
         if (isDepartmentTable || isServiceTable) {
-          const headers = row.slice(columnIndex).map(normalizeHeader);
+          const rawHeaders = row.slice(columnIndex);
+          const headers = rawHeaders.map(canonicalHeader);
           tableHeaders.push({
             rowIndex,
             columnIndex,
             headers,
+            rawHeaders,
             type: isDepartmentTable ? "departments" : "services",
             kind: isFlightTable ? "flight" : "religious"
           });
@@ -126,7 +162,7 @@
       throw new Error("لم نعثر على جدول الأقسام الذي يحتوي Department_ID وTitle وImage.");
     }
     tableHeaders.forEach((tableHeader) => {
-      const { rowIndex, columnIndex, headers } = tableHeader;
+      const { rowIndex, columnIndex, headers, rawHeaders } = tableHeader;
       const nextTable = tableHeaders.find((header) =>
         header.rowIndex === rowIndex && header.columnIndex > columnIndex
       );
@@ -135,7 +171,7 @@
         : headers.length;
       const headerIndexes = new Map();
       headers.slice(0, width).forEach((header, index) => {
-        if (header) headerIndexes.set(header, columnIndex + index);
+        if (header && !headerIndexes.has(header)) headerIndexes.set(header, columnIndex + index);
       });
       const get = (cells, ...keys) => {
         for (const key of keys) {
@@ -186,6 +222,14 @@
           description: get(cells, "description"),
           offer: get(cells, "offer")
         };
+        record.extraDetails = headers.slice(0, width).reduce((details, header, index) => {
+          const label = String(rawHeaders[index] ?? "").trim();
+          const value = cells[columnIndex + index]?.trim() || "";
+          if (header && !STANDARD_SERVICE_HEADERS.has(header) && label && value) {
+            details.push({ label, value });
+          }
+          return details;
+        }, []);
         const hasRequiredDetails = isFlight
           ? record.from && record.to
           : record.title || record.makkahHotel || record.madinahHotel;
@@ -290,7 +334,10 @@
           ["شركة الطيران", record.airline],
           ["المقاعد المتاحة", record.seats]
         ];
-    return details;
+    return [
+      ...details,
+      ...(record.extraDetails || []).map(({ label, value }) => [label, value])
+    ];
   }
 
   function serviceCard(record, index) {
@@ -303,6 +350,7 @@
     const summaryDetails = isFlight
       ? [["التاريخ", record.date], ["درجة التذكرة", record.ticketClass]]
       : [["التاريخ", record.date], ["مدة البرنامج", record.duration]];
+    summaryDetails.push(...(record.extraDetails || []).map(({ label, value }) => [label, value]));
     const searchText = [
       serviceTitle(record),
       category,
@@ -318,7 +366,8 @@
       record.price,
       record.description,
       record.makkahHotel,
-      record.madinahHotel
+      record.madinahHotel,
+      ...(record.extraDetails || []).flatMap(({ label, value }) => [label, value])
     ].filter(Boolean).join(" ");
     return `
       <article class="service-card" data-search="${escapeHtml(searchText)}" data-department="${escapeHtml(record.departmentId)}">
@@ -334,6 +383,7 @@
           <h3>${escapeHtml(title)}</h3>
           ${isFlight ? `<p class="service-route">${escapeHtml(displayValue(record.airline))}</p>` : ""}
           <div class="service-details service-summary">${summaryDetails.map(([label, value]) => detailItem(label, value)).join("")}</div>
+          ${record.description ? `<p class="service-description"><strong>التفاصيل:</strong> ${escapeHtml(record.description)}</p>` : ""}
           <div class="service-card-footer">
             <span class="service-price">${escapeHtml(formatPrice(record.price))}</span>
             <div class="service-card-actions">
