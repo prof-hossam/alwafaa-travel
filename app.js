@@ -427,7 +427,7 @@
             </div>
             <div class="hero-art" aria-hidden="true">
               <span class="hero-orbit"></span>
-              <img class="hero-logo-img" src="kabaa-logo-1.png" alt="" width="220" height="220">
+              <img class="hero-logo-img" src="photos/kabaa-logo-1.png" alt="" width="220" height="220">
               <span class="floating-note">الوفاء ترافل<span>نرافقك في كل خطوة</span></span>
             </div>
           </div>
